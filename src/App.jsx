@@ -238,8 +238,14 @@ const styles = `
   .btn-green { background: var(--green); color: #fff; box-shadow: 0 4px 16px rgba(34,197,94,0.3); }
   .btn-green:hover { transform: translateY(-1px); }
   .btn-sm { padding: 8px 16px; font-size: 12px; width: auto; }
-  .demo-hint { margin-top: 24px; padding: 14px; background: var(--gold-dim); border: 1px solid rgba(245,200,66,0.2); border-radius: var(--radius-sm); font-size: 12px; color: var(--gold); }
-  .demo-hint strong { display: block; margin-bottom: 4px; }
+  .user-mgmt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .user-mgmt-table th { padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); }
+  .user-mgmt-table td { padding: 10px 12px; border-bottom: 1px solid rgba(99,132,255,0.05); }
+  .user-mgmt-table tr:last-child td { border-bottom: none; }
+  .user-mgmt-table tr:hover td { background: var(--surface2); }
+  .delete-btn { background: none; border: none; color: var(--text-faint); cursor: pointer; padding: 4px 6px; border-radius: 4px; font-size: 13px; transition: color 0.15s; }
+  .delete-btn:hover { color: var(--red); }
+  .add-user-form { display: flex; flex-direction: column; gap: 12px; }
 
   .app { display: flex; height: 100vh; overflow: hidden; }
   .sidebar { width: 240px; min-width: 240px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 24px 16px; }
@@ -360,12 +366,32 @@ const styles = `
   @media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr; } .sidebar { display: none; } .main { padding: 20px 16px; } }
 `;
 
-// ─── USERS ────────────────────────────────────────────────────────────────────
-const USERS = {
-  admin:  { username: "admin",  password: "admin123", role: "admin",       name: "Admin Portal",              initials: "AD" },
-  enum1:  { username: "enum1",  password: "enum123",  role: "enumerator",  name: "Enumerator — Harare South", initials: "E1" },
-  enum2:  { username: "enum2",  password: "enum456",  role: "enumerator",  name: "Enumerator — Bulawayo",     initials: "E2" },
-};
+// ─── USERS STORE (in-memory, seeded with defaults) ────────────────────────────
+const DEFAULT_USERS = [
+  { username: "t.moyo",     password: "Admin@2024", role: "admin",      name: "Tendai Moyo",       superAdmin: true  },
+  { username: "r.ncube",    password: "Admin@2025", role: "admin",      name: "Rudo Ncube",        superAdmin: false },
+  { username: "f.chirinda", password: "Field@001",  role: "enumerator", name: "Farai Chirinda",    superAdmin: false },
+  { username: "s.ndlovu",   password: "Field@002",  role: "enumerator", name: "Sithembile Ndlovu", superAdmin: false },
+  { username: "t.hungwe",   password: "Field@003",  role: "enumerator", name: "Tinashe Hungwe",    superAdmin: false },
+];
+
+let USERS_STORE = [...DEFAULT_USERS];
+
+function findUser(username, password, role) {
+  return USERS_STORE.find(u => u.username === username && u.password === password && u.role === role) || null;
+}
+
+function addUser(newUser) {
+  USERS_STORE.push(newUser);
+}
+
+function deleteUser(username) {
+  USERS_STORE = USERS_STORE.filter(u => u.username !== username);
+}
+
+function getInitials(name) {
+  return name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+}
 
 // ─── LOGIN PAGE ───────────────────────────────────────────────────────────────
 function LoginPage({ onLogin }) {
@@ -376,22 +402,20 @@ function LoginPage({ onLogin }) {
   const [error, setError] = useState("");
 
   const handleLogin = () => {
-    const user = Object.values(USERS).find(u => u.username === username && u.password === password && u.role === role);
+    const user = findUser(username, password, role);
     if (user) { onLogin(user); }
     else { setError("Invalid credentials. Please try again."); }
   };
 
-  const fillDemo = (u) => { setUsername(u.username); setPassword(u.password); setRole(u.role); setError(""); };
-
   return (
     <div className="login-wrap">
       <style>{styles}</style>
-      <div className="login-card">
+      <div className="login-card" style={{ maxWidth: "420px" }}>
         <div className="login-logo">
           <div className="login-logo-icon"><Icon.Shield /></div>
           <div>
             <div className="login-logo-name">VerifyZW</div>
-            <div className="login-logo-sub">Member Verification</div>
+            <div className="login-logo-sub">Member Verification System</div>
           </div>
         </div>
         <div className="login-title">Sign in</div>
@@ -403,7 +427,7 @@ function LoginPage({ onLogin }) {
         {error && <div className="login-error">{error}</div>}
         <div className="form-group">
           <label className="form-label">Username</label>
-          <input className="form-input" placeholder="Enter username" value={username} onChange={e => { setUsername(e.target.value); setError(""); }} onKeyDown={e => e.key === "Enter" && handleLogin()} />
+          <input className="form-input" placeholder="Enter username" value={username} onChange={e => { setUsername(e.target.value); setError(""); }} onKeyDown={e => e.key === "Enter" && handleLogin()} autoFocus />
         </div>
         <div className="form-group">
           <label className="form-label">Password</label>
@@ -413,14 +437,6 @@ function LoginPage({ onLogin }) {
           </div>
         </div>
         <button className="btn btn-gold" onClick={handleLogin}>Sign In</button>
-        <div className="demo-hint">
-          <strong>Demo Credentials</strong>
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
-            <button className="btn btn-ghost btn-sm" onClick={() => fillDemo(USERS.admin)}>Admin Login</button>
-            <button className="btn btn-ghost btn-sm" onClick={() => fillDemo(USERS.enum1)}>Enumerator 1</button>
-            <button className="btn btn-ghost btn-sm" onClick={() => fillDemo(USERS.enum2)}>Enumerator 2</button>
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -486,12 +502,15 @@ function AdminPortal({ user, onLogout }) {
         <button className={`nav-item ${activeNav === "dashboard" ? "active" : ""}`} onClick={() => { setActiveNav("dashboard"); setSelectedEnum(null); }}><Icon.BarChart /> Dashboard</button>
         <button className={`nav-item ${activeNav === "registrations" ? "active" : ""}`} onClick={() => { setActiveNav("registrations"); setSelectedEnum(null); }}><Icon.List /> Registrations</button>
         <button className={`nav-item ${activeNav === "enumerators" ? "active" : ""}`} onClick={() => { setActiveNav("enumerators"); setSelectedEnum(null); }}><Icon.User /> By Enumerator</button>
+        {user.superAdmin && (
+          <button className={`nav-item ${activeNav === "users" ? "active" : ""}`} onClick={() => { setActiveNav("users"); setSelectedEnum(null); }}><Icon.User /> Manage Users</button>
+        )}
         <div className="sidebar-spacer" />
         <div className="sidebar-user">
-          <div className="user-avatar">{user.initials}</div>
+          <div className="user-avatar">{getInitials(user.name)}</div>
           <div className="user-info">
-            <div className="user-name">Administrator</div>
-            <div className="user-role">Admin Access</div>
+            <div className="user-name">{user.name}</div>
+            <div className="user-role">{user.superAdmin ? "Super Admin" : "Admin"}</div>
           </div>
         </div>
         <button className="btn btn-outline btn-sm" style={{ width: "100%", marginTop: "10px", gap: "8px", color: "var(--red)", borderColor: "rgba(239,68,68,0.3)" }} onClick={onLogout}>
@@ -558,6 +577,10 @@ function AdminPortal({ user, onLogout }) {
           </>
         )}
 
+        {!loading && activeNav === "users" && user.superAdmin && (
+          <UserManagement />
+        )}
+
         {!loading && activeNav === "enumerators" && (() => {
           const enumNames = [...new Set(registrations.map(r => r.enumerator))];
           const enumStats = enumNames.map(name => {
@@ -580,7 +603,7 @@ function AdminPortal({ user, onLogout }) {
                     {enumStats.map(e => (
                       <div key={e.name} className="panel" style={{ cursor: "pointer" }} onClick={() => setSelectedEnum(e.name)}>
                         <div style={{ padding: "20px 24px", display: "flex", alignItems: "center", gap: "20px" }}>
-                          <div className="user-avatar" style={{ width: "42px", height: "42px", fontSize: "14px", flexShrink: 0 }}>{e.name.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase()}</div>
+                          <div className="user-avatar" style={{ width: "42px", height: "42px", fontSize: "14px", flexShrink: 0 }}>{getInitials(e.name)}</div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: "14px", fontWeight: 600, marginBottom: "4px" }}>{e.name}</div>
                             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
@@ -668,6 +691,171 @@ function AdminPortal({ user, onLogout }) {
   );
 }
 
+// ─── USER MANAGEMENT ──────────────────────────────────────────────────────────
+function UserManagement() {
+  const [users, setUsers] = useState([...USERS_STORE]);
+  const [newUser, setNewUser] = useState({ username: "", password: "", role: "enumerator", name: "" });
+  const [message, setMessage] = useState("");
+
+  const handleAddUser = () => {
+    if (!newUser.username || !newUser.password || !newUser.name) {
+      setMessage("Please fill in all fields");
+      return;
+    }
+    if (USERS_STORE.find(u => u.username === newUser.username)) {
+      setMessage("Username already exists");
+      return;
+    }
+    const userToAdd = {
+      ...newUser,
+      superAdmin: false
+    };
+    addUser(userToAdd);
+    setUsers([...USERS_STORE]);
+    setNewUser({ username: "", password: "", role: "enumerator", name: "" });
+    setMessage("User added successfully");
+  };
+
+  const handleDeleteUser = (username) => {
+    const userToDelete = USERS_STORE.find(u => u.username === username);
+    if (userToDelete && userToDelete.superAdmin) {
+      setMessage("Cannot delete super admin");
+      return;
+    }
+    deleteUser(username);
+    setUsers([...USERS_STORE]);
+    setMessage("User deleted successfully");
+  };
+
+  return (
+    <>
+      <div className="page-header">
+        <div className="page-title">Manage Users</div>
+        <div className="page-sub">Add or remove system users</div>
+      </div>
+      
+      {message && (
+        <div style={{ 
+          padding: "12px 14px", 
+          background: message.includes("success") ? "var(--green-dim)" : "var(--red-dim)", 
+          border: `1px solid ${message.includes("success") ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
+          borderRadius: "var(--radius-sm)", 
+          marginBottom: "20px",
+          color: message.includes("success") ? "var(--green)" : "var(--red)",
+          fontSize: "13px"
+        }}>
+          {message}
+        </div>
+      )}
+
+      <div className="panel" style={{ marginBottom: "20px" }}>
+        <div className="panel-header">
+          <div className="panel-title"><Icon.User /> Add New User</div>
+        </div>
+        <div className="panel-body">
+          <div className="add-user-form">
+            <div className="form-group">
+              <label className="form-label">Full Name</label>
+              <input 
+                className="form-input" 
+                placeholder="Enter full name" 
+                value={newUser.name} 
+                onChange={e => setNewUser({ ...newUser, name: e.target.value })} 
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Username</label>
+              <input 
+                className="form-input" 
+                placeholder="Enter username" 
+                value={newUser.username} 
+                onChange={e => setNewUser({ ...newUser, username: e.target.value })} 
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Password</label>
+              <input 
+                className="form-input" 
+                type="password"
+                placeholder="Enter password" 
+                value={newUser.password} 
+                onChange={e => setNewUser({ ...newUser, password: e.target.value })} 
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Role</label>
+              <select 
+                className="form-input"
+                value={newUser.role} 
+                onChange={e => setNewUser({ ...newUser, role: e.target.value })}
+                style={{ cursor: "pointer" }}
+              >
+                <option value="enumerator">Enumerator</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <button className="btn btn-gold" onClick={handleAddUser}>
+              Add User
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <div className="panel-title"><Icon.List /> Current Users</div>
+        </div>
+        <div className="panel-body">
+          <div className="table-wrap">
+            <table className="user-mgmt-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Username</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.username}>
+                    <td style={{ fontWeight: 500 }}>{u.name}</td>
+                    <td className="mono-td">{u.username}</td>
+                    <td>
+                      <span className={`badge ${u.role === "admin" ? "badge-gold" : "badge-green"}`}>
+                        {u.role}
+                      </span>
+                    </td>
+                    <td>
+                      {u.superAdmin ? (
+                        <span className="badge badge-gold">Super Admin</span>
+                      ) : (
+                        <span style={{ color: "var(--text-dim)", fontSize: "12px" }}>Standard</span>
+                      )}
+                    </td>
+                    <td>
+                      {!u.superAdmin && (
+                        <button 
+                          className="delete-btn" 
+                          onClick={() => handleDeleteUser(u.username)}
+                          title="Delete user"
+                        >
+                          <Icon.X />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── ENUMERATOR PORTAL ────────────────────────────────────────────────────────
 function EnumeratorPortal({ user, onLogout }) {
   const [idInput, setIdInput] = useState("");
@@ -677,6 +865,7 @@ function EnumeratorPortal({ user, onLogout }) {
   const [form, setForm] = useState({ phone: "", ward: "", notes: "" });
   const [submitted, setSubmitted] = useState(null);
   const [sessionCount, setSessionCount] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
 
   // Load session count on mount
   useEffect(() => {
@@ -702,6 +891,8 @@ function EnumeratorPortal({ user, onLogout }) {
   };
 
   const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
     const voter = lookupResult?.voter;
     const normId = formatID(normaliseID(idInput.trim()));
     const record = {
@@ -721,6 +912,8 @@ function EnumeratorPortal({ user, onLogout }) {
       setStep("success");
     } catch (err) {
       alert("Failed to save. Check your internet connection and try again.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -745,7 +938,7 @@ function EnumeratorPortal({ user, onLogout }) {
         </div>
 
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "10px", padding: "12px 16px", marginBottom: "20px", display: "flex", alignItems: "center", gap: "10px" }}>
-          <div className="user-avatar" style={{ width: "28px", height: "28px", fontSize: "11px" }}>{user.initials}</div>
+          <div className="user-avatar" style={{ width: "28px", height: "28px", fontSize: "11px" }}>{getInitials(user.name)}</div>
           <div>
             <div style={{ fontSize: "12px", fontWeight: 600 }}>{user.name}</div>
             <div style={{ fontSize: "11px", color: "var(--text-faint)" }}>Active session</div>
@@ -842,8 +1035,8 @@ function EnumeratorPortal({ user, onLogout }) {
             <div className="action-row">
               <button className="btn btn-ghost" onClick={handleReset}>← New Search</button>
               {!lookupResult.duplicate && (
-                <button className={`btn ${lookupResult.found ? "btn-green" : "btn-outline"}`} onClick={handleSubmit}>
-                  {lookupResult.found ? "Submit Registration" : "Submit (Flagged)"}
+                <button className={`btn ${lookupResult.found ? "btn-green" : "btn-outline"}`} onClick={handleSubmit} disabled={submitting} style={{ opacity: submitting ? 0.6 : 1, cursor: submitting ? "not-allowed" : "pointer" }}>
+                  {submitting ? "Saving…" : lookupResult.found ? "Submit Registration" : "Submit (Flagged)"}
                 </button>
               )}
             </div>
@@ -876,4 +1069,3 @@ export default function App() {
   if (user.role === "admin") return <AdminPortal user={user} onLogout={() => setUser(null)} />;
   return <EnumeratorPortal user={user} onLogout={() => setUser(null)} />;
 }
-
