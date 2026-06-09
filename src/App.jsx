@@ -119,7 +119,6 @@ function lookupID(rawInput) {
 }
 
 // ─── SUPABASE DATA FUNCTIONS ──────────────────────────────────────────────────
-let regCounter = 1;
 
 async function checkDuplicate(rawInput) {
   const norm = normaliseID(rawInput);
@@ -159,7 +158,6 @@ async function fetchRegistrations() {
     .select("*")
     .order("timestamp", { ascending: false });
   if (error) throw error;
-  // Normalise DB column names to match app field names
   return (data || []).map(r => ({
     regId: r.reg_id,
     idNumber: r.id_number,
@@ -172,6 +170,61 @@ async function fetchRegistrations() {
     gender: r.gender,
     timestamp: r.timestamp,
   }));
+}
+
+// ─── USER MANAGEMENT FUNCTIONS ────────────────────────────────────────────────
+async function fetchUsers() {
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+async function addUserToDB(newUser) {
+  const { data, error } = await supabase
+    .from("users")
+    .insert([{
+      username: newUser.username,
+      password: newUser.password,
+      role: newUser.role,
+      name: newUser.name,
+      super_admin: newUser.superAdmin || false,
+    }])
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function deleteUserFromDB(username) {
+  const { error } = await supabase
+    .from("users")
+    .delete()
+    .eq("username", username);
+  if (error) throw error;
+}
+
+async function findUserInDB(username, password, role) {
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("username", username)
+    .eq("password", password)
+    .eq("role", role)
+    .single();
+  if (error) return null;
+  if (data) {
+    return {
+      username: data.username,
+      password: data.password,
+      role: data.role,
+      name: data.name,
+      superAdmin: data.super_admin,
+    };
+  }
+  return null;
 }
 
 // ─── ICONS ────────────────────────────────────────────────────────────────────
@@ -366,29 +419,7 @@ const styles = `
   @media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr; } .sidebar { display: none; } .main { padding: 20px 16px; } }
 `;
 
-// ─── USERS STORE (in-memory, seeded with defaults) ────────────────────────────
-const DEFAULT_USERS = [
-  { username: "t.moyo",     password: "Admin@2024", role: "admin",      name: "Tendai Moyo",       superAdmin: true  },
-  { username: "r.ncube",    password: "Admin@2025", role: "admin",      name: "Rudo Ncube",        superAdmin: false },
-  { username: "f.chirinda", password: "Field@001",  role: "enumerator", name: "Farai Chirinda",    superAdmin: false },
-  { username: "s.ndlovu",   password: "Field@002",  role: "enumerator", name: "Sithembile Ndlovu", superAdmin: false },
-  { username: "t.hungwe",   password: "Field@003",  role: "enumerator", name: "Tinashe Hungwe",    superAdmin: false },
-];
-
-let USERS_STORE = [...DEFAULT_USERS];
-
-function findUser(username, password, role) {
-  return USERS_STORE.find(u => u.username === username && u.password === password && u.role === role) || null;
-}
-
-function addUser(newUser) {
-  USERS_STORE.push(newUser);
-}
-
-function deleteUser(username) {
-  USERS_STORE = USERS_STORE.filter(u => u.username !== username);
-}
-
+// ─── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
 function getInitials(name) {
   return name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 }
@@ -400,11 +431,26 @@ function LoginPage({ onLogin }) {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    const user = findUser(username, password, role);
-    if (user) { onLogin(user); }
-    else { setError("Invalid credentials. Please try again."); }
+  const handleLogin = async () => {
+    if (!username || !password) {
+      setError("Please enter username and password");
+      return;
+    }
+    setLoading(true);
+    try {
+      const user = await findUserInDB(username, password, role);
+      if (user) { 
+        onLogin(user); 
+      } else { 
+        setError("Invalid credentials. Please try again."); 
+      }
+    } catch (err) {
+      setError("Login failed. Please check your connection.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -436,7 +482,9 @@ function LoginPage({ onLogin }) {
             <button className="pw-toggle" onClick={() => setShowPw(p => !p)}>{showPw ? <Icon.EyeOff /> : <Icon.Eye />}</button>
           </div>
         </div>
-        <button className="btn btn-gold" onClick={handleLogin}>Sign In</button>
+        <button className="btn btn-gold" onClick={handleLogin} disabled={loading}>
+          {loading ? "Signing in…" : "Sign In"}
+        </button>
       </div>
     </div>
   );
@@ -693,45 +741,75 @@ function AdminPortal({ user, onLogout }) {
 
 // ─── USER MANAGEMENT ──────────────────────────────────────────────────────────
 function UserManagement() {
-  const [users, setUsers] = useState([...USERS_STORE]);
+  const [users, setUsers] = useState([]);
   const [newUser, setNewUser] = useState({ username: "", password: "", role: "enumerator", name: "" });
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const handleAddUser = () => {
+  // Load users from Supabase
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      const data = await fetchUsers();
+      setUsers(data);
+    } catch (err) {
+      setMessage("Failed to load users");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddUser = async () => {
     if (!newUser.username || !newUser.password || !newUser.name) {
       setMessage("Please fill in all fields");
       return;
     }
-    if (USERS_STORE.find(u => u.username === newUser.username)) {
-      setMessage("Username already exists");
-      return;
+    
+    try {
+      await addUserToDB({
+        ...newUser,
+        superAdmin: false
+      });
+      setNewUser({ username: "", password: "", role: "enumerator", name: "" });
+      setMessage("User added successfully");
+      loadUsers(); // Refresh the list
+    } catch (err) {
+      setMessage("Failed to add user. Username might already exist.");
     }
-    const userToAdd = {
-      ...newUser,
-      superAdmin: false
-    };
-    addUser(userToAdd);
-    setUsers([...USERS_STORE]);
-    setNewUser({ username: "", password: "", role: "enumerator", name: "" });
-    setMessage("User added successfully");
   };
 
-  const handleDeleteUser = (username) => {
-    const userToDelete = USERS_STORE.find(u => u.username === username);
-    if (userToDelete && userToDelete.superAdmin) {
+  const handleDeleteUser = async (username) => {
+    const userToDelete = users.find(u => u.username === username);
+    if (userToDelete && userToDelete.super_admin) {
       setMessage("Cannot delete super admin");
       return;
     }
-    deleteUser(username);
-    setUsers([...USERS_STORE]);
-    setMessage("User deleted successfully");
+    
+    try {
+      await deleteUserFromDB(username);
+      setMessage("User deleted successfully");
+      loadUsers(); // Refresh the list
+    } catch (err) {
+      setMessage("Failed to delete user");
+    }
   };
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "200px", color: "var(--text-faint)" }}>
+        Loading users…
+      </div>
+    );
+  }
 
   return (
     <>
       <div className="page-header">
         <div className="page-title">Manage Users</div>
-        <div className="page-sub">Add or remove system users</div>
+        <div className="page-sub">Add or remove system users (synced across all devices)</div>
       </div>
       
       {message && (
@@ -804,6 +882,7 @@ function UserManagement() {
       <div className="panel">
         <div className="panel-header">
           <div className="panel-title"><Icon.List /> Current Users</div>
+          <div style={{ fontSize: "12px", color: "var(--text-faint)" }}>{users.length} users</div>
         </div>
         <div className="panel-body">
           <div className="table-wrap">
@@ -828,14 +907,14 @@ function UserManagement() {
                       </span>
                     </td>
                     <td>
-                      {u.superAdmin ? (
+                      {u.super_admin ? (
                         <span className="badge badge-gold">Super Admin</span>
                       ) : (
                         <span style={{ color: "var(--text-dim)", fontSize: "12px" }}>Standard</span>
                       )}
                     </td>
                     <td>
-                      {!u.superAdmin && (
+                      {!u.super_admin && (
                         <button 
                           className="delete-btn" 
                           onClick={() => handleDeleteUser(u.username)}
